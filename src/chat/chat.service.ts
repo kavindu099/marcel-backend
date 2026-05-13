@@ -31,8 +31,26 @@ export class ChatService {
     mediaType?: string,
   ): Promise<{ message: string; products: ProductDocument[] }> {
     const intent = await this.extractIntent(message, history)
-    // Skip DB search for out-of-scope requests (men's, sportswear, etc.)
-    const products = intent.outOfScope ? [] : await this.productsService.search(intent)
+    let products: ProductDocument[]
+    if (intent.outOfScope) {
+      products = []
+    } else if (image && !intent.category) {
+      // Photo submitted with no specific category — ensure unisex items are always
+      // in catalogue matches so Claude has gender-appropriate options for men
+      const [general, unisex] = await Promise.all([
+        this.productsService.search(intent),
+        this.productsService.search({ ...intent, category: "Unisex Tops" }),
+      ])
+      const seen = new Set<string>()
+      products = [...general, ...unisex].filter(p => {
+        const id = String(p._id)
+        if (seen.has(id)) return false
+        seen.add(id)
+        return true
+      })
+    } else {
+      products = await this.productsService.search(intent)
+    }
     const reply = await this.generateReply(message, history, products, image, mediaType)
     return { message: reply, products: this.reorderByMention(products, reply) }
   }
@@ -129,8 +147,16 @@ Return {} if no shopping intent found.`,
       ? `You are AURA, a personal stylist for a modern fashion boutique. The customer has shared a photo for style analysis.
 Detect the language of the customer's message and always reply in that same language.
 We stock women's fashion AND unisex items including t-shirts, hoodies, leggings, tote bags, caps and more — suitable for any gender.
-If the photo shows a man: analyse his style, colouring, and proportions, then recommend suitable items from our unisex range (t-shirts, hoodies, accessories). Never turn him away.
-If the photo shows a woman: note her colouring and proportions, identify her style aesthetic, give warm specific feedback, and explain why the recommended products suit her look.
+
+IF THE PHOTO SHOWS A MAN:
+- Analyse his style, colouring, and build, then recommend items from our Unisex Tops or Men's Tops range only.
+- HARD RULE: Only recommend products whose category is "Unisex Tops" or "Men's Tops" from [CATALOGUE MATCHES].
+- NEVER recommend Handbags, Sandals, Earrings, Women's Tops, or Dresses to a man — skip those products entirely even if they appear in [CATALOGUE MATCHES].
+- If no Unisex Tops or Men's Tops appear in [CATALOGUE MATCHES], tell him we carry great unisex t-shirts and hoodies and invite him to browse that section.
+
+IF THE PHOTO SHOWS A WOMAN:
+- Note her colouring and proportions, identify her style aesthetic, give warm specific feedback, and explain why the recommended products suit her look.
+
 Base recommendations only on products listed in [CATALOGUE MATCHES]. Keep to 3–5 sentences. Never use emojis. Be encouraging and inclusive.`
       : `You are AURA, a shopping assistant for an upscale women's fashion boutique.
 Detect the language of the customer's message and always reply in that same language. Never switch languages mid-conversation.
