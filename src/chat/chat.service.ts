@@ -32,11 +32,14 @@ export class ChatService {
     mediaType?: string,
   ): Promise<{ message: string; products: ProductDocument[] }> {
     const intent = await this.extractIntent(message, history)
+    // Fallback gender detection: catches cases where Haiku misses the forMen flag.
+    // Pattern: user says "I'm a man/guy/male/boy" and is NOT buying a gift.
+    const isSelfMale = intent.forMen || this.isMaleShopper(message, history)
     const MEN_ONLY_CATEGORIES = new Set(["Unisex Tops", "Men's Tops"])
     let products: ProductDocument[]
     if (intent.outOfScope) {
       products = []
-    } else if (intent.forMen) {
+    } else if (isSelfMale) {
       // Man shopping for himself — only search gender-appropriate categories
       products = await this.productsService.search({ ...intent, category: "Unisex Tops" })
     } else if (image && !intent.category) {
@@ -60,11 +63,22 @@ export class ChatService {
       products = await this.productsService.search(intent)
     }
     // Final safety filter: never return women-only items to a man shopping for himself
-    if (intent.forMen) {
+    if (isSelfMale) {
       products = products.filter(p => MEN_ONLY_CATEGORIES.has(p.category as string))
     }
     const reply = await this.generateReply(message, history, products, image, mediaType)
     return { message: reply, products: this.reorderByMention(products, reply) }
+  }
+
+  private isMaleShopper(message: string, history: HistoryMessage[]): boolean {
+    // Detect a man shopping for himself from message text or recent history.
+    // Avoids false-positives by checking the message doesn't describe gift shopping.
+    const giftSignals = /\b(for|gift|girlfriend|wife|sister|mother|mom|daughter|her|she|woman|girl)\b/i
+    const combined = [message, ...history.slice(-4).map(m => m.content)].join(' ')
+    if (giftSignals.test(message)) return false
+    // Matches: "I'm a man", "I am a guy", "I'm a 27-year-old male", "as a man", etc.
+    const malePatterns = /\b(i'?m|i am|as)\s+a\s+(\d+[\s-]year[\s-]old\s+)?(man|guy|male|boy|men)\b/i
+    return malePatterns.test(combined)
   }
 
   private reorderByMention(products: ProductDocument[], reply: string): ProductDocument[] {
