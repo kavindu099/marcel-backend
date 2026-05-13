@@ -40,14 +40,17 @@ export class ChatService {
       // Man shopping for himself — only search gender-appropriate categories
       products = await this.productsService.search({ ...intent, category: "Unisex Tops" })
     } else if (image && !intent.category) {
-      // Photo submitted with no specific category — ensure unisex items are always
-      // in catalogue matches so Claude has gender-appropriate options for men
-      const [general, unisex] = await Promise.all([
+      // Photo with no specific category: search across clothing, accessories, and
+      // unisex items so Claude has a diverse catalogue for both women and men.
+      // The image prompt rules handle filtering per gender.
+      const [general, handbags, sandals, unisex] = await Promise.all([
         this.productsService.search(intent),
+        this.productsService.search({ ...intent, category: "Handbags" }),
+        this.productsService.search({ ...intent, category: "Sandals" }),
         this.productsService.search({ ...intent, category: "Unisex Tops" }),
       ])
       const seen = new Set<string>()
-      products = [...general, ...unisex].filter(p => {
+      products = [...general, ...handbags, ...sandals, ...unisex].filter(p => {
         const id = String(p._id)
         if (seen.has(id)) return false
         seen.add(id)
@@ -66,14 +69,13 @@ export class ChatService {
 
   private reorderByMention(products: ProductDocument[], reply: string): ProductDocument[] {
     const lower = reply.toLowerCase()
-    const mentioned = products
-      .map(p => ({ product: p, idx: lower.indexOf(p.name.toLowerCase()) }))
-      .filter(x => x.idx >= 0)
-      .sort((a, b) => a.idx - b.idx)
-      .map(x => x.product)
-    // Only show products Claude explicitly named — avoids surfacing irrelevant
-    // items (e.g. women's products when Claude correctly redirected a male user)
-    return mentioned.length > 0 ? mentioned : products
+    const withIdx = products.map(p => ({ product: p, idx: lower.indexOf(p.name.toLowerCase()) }))
+    const mentioned = withIdx.filter(x => x.idx >= 0).sort((a, b) => a.idx - b.idx)
+    const rest = withIdx.filter(x => x.idx < 0)
+    // Mentioned products first, then the rest. The products array is already
+    // filtered to gender-appropriate items before this function runs, so
+    // unmentioned items are still relevant suggestions (not cross-gender noise).
+    return [...mentioned.map(x => x.product), ...rest.map(x => x.product)]
   }
 
   private async extractIntent(message: string, history: HistoryMessage[]): Promise<Intent> {
@@ -169,9 +171,11 @@ IF THE PHOTO SHOWS A MAN:
 - If no Unisex Tops or Men's Tops appear in [CATALOGUE MATCHES], tell him we carry great unisex t-shirts and hoodies and invite him to browse that section.
 
 IF THE PHOTO SHOWS A WOMAN:
-- Note her colouring and proportions, identify her style aesthetic, give warm specific feedback, and explain why the recommended products suit her look.
+- Note her colouring and proportions, identify her style aesthetic, give warm specific feedback.
+- Recommend a full outfit: name at least one clothing item AND at least one accessory (handbag or sandals) if available in [CATALOGUE MATCHES].
+- Explain why each recommended product suits her look.
 
-Base recommendations only on products listed in [CATALOGUE MATCHES]. Keep to 3–5 sentences. Never use emojis. Be encouraging and inclusive.`
+Base recommendations only on products listed in [CATALOGUE MATCHES]. Name each product explicitly by its exact name. Keep to 4–6 sentences. Never use emojis. Be encouraging and inclusive.`
       : `You are AURA, a shopping assistant for an upscale women's fashion boutique.
 Detect the language of the customer's message and always reply in that same language. Never switch languages mid-conversation.
 
