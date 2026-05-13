@@ -12,6 +12,7 @@ interface Intent {
   size?: string
   isFollowUp?: boolean
   outOfScope?: boolean
+  forMen?: boolean
 }
 
 type ImageMediaType = 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp'
@@ -31,9 +32,13 @@ export class ChatService {
     mediaType?: string,
   ): Promise<{ message: string; products: ProductDocument[] }> {
     const intent = await this.extractIntent(message, history)
+    const MEN_ONLY_CATEGORIES = new Set(["Unisex Tops", "Men's Tops"])
     let products: ProductDocument[]
     if (intent.outOfScope) {
       products = []
+    } else if (intent.forMen) {
+      // Man shopping for himself — only search gender-appropriate categories
+      products = await this.productsService.search({ ...intent, category: "Unisex Tops" })
     } else if (image && !intent.category) {
       // Photo submitted with no specific category — ensure unisex items are always
       // in catalogue matches so Claude has gender-appropriate options for men
@@ -50,6 +55,10 @@ export class ChatService {
       })
     } else {
       products = await this.productsService.search(intent)
+    }
+    // Final safety filter: never return women-only items to a man shopping for himself
+    if (intent.forMen) {
+      products = products.filter(p => MEN_ONLY_CATEGORIES.has(p.category as string))
     }
     const reply = await this.generateReply(message, history, products, image, mediaType)
     return { message: reply, products: this.reorderByMention(products, reply) }
@@ -83,6 +92,7 @@ Extract shopping intent and return ONLY valid JSON with these optional fields:
 - size: string (XS/S/M/L/XL/XXL or numeric like 28)
 - isFollowUp: true (if this references a previous message)
 - outOfScope: true (if the request is for something we don't sell — children's clothing, swimwear, suits, formal menswear, underwear)
+- forMen: true (ONLY when a man is explicitly shopping FOR HIMSELF — not for a gift)
 
 CRITICAL: Always extract the category of the item being REQUESTED, NOT the item being referenced or already chosen.
 Example: "I like this dress, recommend a matching handbag" → category: "Handbags" (not "Dresses")
@@ -90,8 +100,8 @@ Example: "I picked the corset, what shoes go with it?" → category: "Sandals" (
 The referenced item is context only — the requested item determines the category.
 
 IMPORTANT — MEN SHOPPING RULES:
-- If a man is shopping FOR HIMSELF: only set category to "Unisex Tops". Never set Handbags, Sandals, Earrings, Women's Tops, or Dresses for a man shopping for himself.
-- If shopping as a GIFT for a woman: any category is allowed.
+- If a man is shopping FOR HIMSELF: set forMen: true AND category: "Unisex Tops". Never set Handbags, Sandals, Earrings, Women's Tops, or Dresses for a man shopping for himself.
+- If shopping as a GIFT for a woman: any category is allowed. Do NOT set forMen.
 - Gift shopping for men is NOT outOfScope — recommend Unisex Tops.
 - T-shirts, hoodies, sweatshirts are always "Unisex Tops", never "Women's Tops".
 - Requests that include a budget — always try to find matching products.
