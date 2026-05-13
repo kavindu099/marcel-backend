@@ -66,10 +66,14 @@ export class ChatService {
 
   private reorderByMention(products: ProductDocument[], reply: string): ProductDocument[] {
     const lower = reply.toLowerCase()
-    const withIdx = products.map(p => ({ product: p, idx: lower.indexOf(p.name.toLowerCase()) }))
-    const mentioned = withIdx.filter(x => x.idx >= 0).sort((a, b) => a.idx - b.idx)
-    const rest = withIdx.filter(x => x.idx < 0)
-    return [...mentioned.map(x => x.product), ...rest.map(x => x.product)]
+    const mentioned = products
+      .map(p => ({ product: p, idx: lower.indexOf(p.name.toLowerCase()) }))
+      .filter(x => x.idx >= 0)
+      .sort((a, b) => a.idx - b.idx)
+      .map(x => x.product)
+    // Only show products Claude explicitly named — avoids surfacing irrelevant
+    // items (e.g. women's products when Claude correctly redirected a male user)
+    return mentioned.length > 0 ? mentioned : products
   }
 
   private async extractIntent(message: string, history: HistoryMessage[]): Promise<Intent> {
