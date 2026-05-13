@@ -31,29 +31,34 @@ export class ChatService {
     image?: string,
     mediaType?: string,
   ): Promise<{ message: string; products: ProductDocument[] }> {
-    const intent = await this.extractIntent(message, history)
-    // Fallback gender detection: catches cases where Haiku misses the forMen flag.
-    // Pattern: user says "I'm a man/guy/male/boy" and is NOT buying a gift.
-    const isSelfMale = intent.forMen || this.isMaleShopper(message, history)
+    // Run intent extraction and image gender detection in parallel
+    const [intent, imageGender] = await Promise.all([
+      this.extractIntent(message, history),
+      image ? this.detectGenderFromImage(image, mediaType ?? 'image/jpeg') : Promise.resolve('unknown' as const),
+    ])
+
+    const isSelfMale = intent.forMen
+      || imageGender === 'male'
+      || this.isMaleShopper(message, history)
+
     const MEN_ONLY_CATEGORIES = new Set(["Unisex Tops", "Men's Tops"])
     let products: ProductDocument[]
+
     if (intent.outOfScope) {
       products = []
     } else if (isSelfMale) {
       // Man shopping for himself — only search gender-appropriate categories
       products = await this.productsService.search({ ...intent, category: "Unisex Tops" })
-    } else if (image && !intent.category) {
-      // Photo with no specific category: search across clothing, accessories, and
-      // unisex items so Claude has a diverse catalogue for both women and men.
-      // The image prompt rules handle filtering per gender.
-      const [general, handbags, sandals, unisex] = await Promise.all([
+    } else if (!intent.category) {
+      // No specific item requested (image or open-ended text) — search broadly
+      // so women always see accessories alongside clothing options
+      const [general, handbags, sandals] = await Promise.all([
         this.productsService.search(intent),
         this.productsService.search({ ...intent, category: "Handbags" }),
         this.productsService.search({ ...intent, category: "Sandals" }),
-        this.productsService.search({ ...intent, category: "Unisex Tops" }),
       ])
       const seen = new Set<string>()
-      products = [...general, ...handbags, ...sandals, ...unisex].filter(p => {
+      products = [...general, ...handbags, ...sandals].filter(p => {
         const id = String(p._id)
         if (seen.has(id)) return false
         seen.add(id)
@@ -62,6 +67,7 @@ export class ChatService {
     } else {
       products = await this.productsService.search(intent)
     }
+
     // Final safety filter: never return women-only items to a man shopping for himself
     if (isSelfMale) {
       products = products.filter(p => MEN_ONLY_CATEGORIES.has(p.category as string))
@@ -70,12 +76,34 @@ export class ChatService {
     return { message: reply, products: this.reorderByMention(products, reply) }
   }
 
+  private async detectGenderFromImage(image: string, mediaType: string): Promise<'male' | 'female' | 'unknown'> {
+    try {
+      const res = await this.claude.messages.create({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 10,
+        messages: [{
+          role: 'user',
+          content: [
+            { type: 'image', source: { type: 'base64', media_type: mediaType as ImageMediaType, data: image } },
+            { type: 'text', text: 'Is the main person in this photo male or female? Reply with exactly one word: male, female, or unknown.' },
+          ],
+        }],
+      }, { timeout: 10_000 })
+      const text = res.content[0].type === 'text' ? res.content[0].text.trim().toLowerCase() : 'unknown'
+      if (text === 'male') return 'male'
+      if (text === 'female') return 'female'
+      return 'unknown'
+    } catch {
+      return 'unknown'
+    }
+  }
+
   private isMaleShopper(message: string, history: HistoryMessage[]): boolean {
     // Detect a man shopping for himself from message text or recent history.
     // Avoids false-positives by checking the message doesn't describe gift shopping.
     const giftSignals = /\b(for|gift|girlfriend|wife|sister|mother|mom|daughter|her|she|woman|girl)\b/i
-    const combined = [message, ...history.slice(-4).map(m => m.content)].join(' ')
     if (giftSignals.test(message)) return false
+    const combined = [message, ...history.slice(-4).map(m => m.content)].join(' ')
     // Matches: "I'm a man", "I am a guy", "I'm a 27-year-old male", "as a man", etc.
     const malePatterns = /\b(i'?m|i am|as)\s+a\s+(\d+[\s-]year[\s-]old\s+)?(man|guy|male|boy|men)\b/i
     return malePatterns.test(combined)
