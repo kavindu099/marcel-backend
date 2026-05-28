@@ -48,6 +48,8 @@ export class ChatService {
       || imageGender === 'male'
       || this.isMaleShopper(message, history)
 
+    console.log(`[Chat] shopDomain="${shopDomain ?? ''}" intent=${JSON.stringify(intent)}`)
+
     const MEN_ONLY_CATEGORIES = new Set(["Unisex Tops", "Men's Tops"])
     let products: ChatProduct[]
     let storeContext = ''
@@ -68,6 +70,7 @@ export class ChatService {
       products = products.filter(p => MEN_ONLY_CATEGORIES.has(p.category))
     }
 
+    console.log(`[Chat] products found: ${products.length} — ${products.slice(0, 3).map(p => p.name).join(', ')}`)
     const reply = await this.generateReply(message, history, products, storeContext, image, mediaType)
     return { message: reply, products: this.reorderByMention(products, reply) }
   }
