@@ -24,8 +24,12 @@
   if (window.__AURA_WIDGET_LOADED__) return
   window.__AURA_WIDGET_LOADED__ = true
 
+  // Derive API base URL from the script's own src so auto-injected tags work without config.
+  var _scriptSrc = (document.currentScript && document.currentScript.src) || ''
+  var _defaultApi = _scriptSrc ? _scriptSrc.replace(/\/widget\/chat-widget\.js.*$/, '/api') : ''
+
   var cfg = {
-    apiUrl:        (window.AuraChatConfig && window.AuraChatConfig.apiUrl)        || '',
+    apiUrl:        (window.AuraChatConfig && window.AuraChatConfig.apiUrl)        || _defaultApi,
     shopDomain:    (window.AuraChatConfig && window.AuraChatConfig.shopDomain)    || (window.Shopify && window.Shopify.shop) || '',
     primaryColor:  (window.AuraChatConfig && window.AuraChatConfig.primaryColor)  || '#111827',
     assistantName: (window.AuraChatConfig && window.AuraChatConfig.assistantName) || 'AURA',
