@@ -198,6 +198,7 @@ export class ShopifyProductsService {
   }
 
   private async runQuery(shopDomain: string, accessToken: string, query: string): Promise<ChatProduct[]> {
+    console.log(`[ShopifyProducts] runQuery shop=${shopDomain} tokenLen=${accessToken?.length ?? 0} query="${query}"`)
     let resp: Response
     try {
       resp = await fetch(`https://${shopDomain}/admin/api/2025-01/graphql.json`, {
@@ -213,14 +214,23 @@ export class ShopifyProductsService {
       return []
     }
 
+    console.log(`[ShopifyProducts] HTTP ${resp.status} for query "${query}"`)
+
     if (!resp.ok) {
-      console.error('[ShopifyProducts] API error:', resp.status, await resp.text())
+      const body = await resp.text()
+      console.error(`[ShopifyProducts] API error ${resp.status}: ${body.slice(0, 500)}`)
       return []
     }
 
-    const json = await resp.json() as {
-      data?: { products?: { edges?: { node: unknown }[] } }
-      errors?: { message: string; locations?: unknown }[]
+    const rawText = await resp.text()
+    console.log(`[ShopifyProducts] Raw response (first 300): ${rawText.slice(0, 300)}`)
+
+    let json: { data?: { products?: { edges?: { node: unknown }[] } }; errors?: { message: string }[] }
+    try {
+      json = JSON.parse(rawText) as typeof json
+    } catch (e) {
+      console.error('[ShopifyProducts] JSON parse error:', e)
+      return []
     }
 
     if (json.errors?.length) {
