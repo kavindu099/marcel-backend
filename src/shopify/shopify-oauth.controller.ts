@@ -5,7 +5,7 @@ import { ShopifyOAuthService } from './shopify-oauth.service'
 import { ShopService } from './shop.service'
 import { ShopifyProductsService } from './shopify-products.service'
 
-const PING_GQL = `{ shop { name } products(first: 3, query: "status:active") { edges { node { id title } } } }`
+const PING_GQL = `{ shop { name } products(first: 3) { edges { node { id title } } } }`
 
 @ApiTags('Shopify')
 @Controller('shopify')
@@ -58,9 +58,9 @@ export class ShopifyOAuthController {
     }
 
     try {
-      const resp = await fetch(`https://${shop}/admin/api/2025-01/graphql.json`, {
+      const resp = await fetch(`https://${shop}/api/2025-01/graphql.json`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Shopify-Access-Token': token },
+        headers: { 'Content-Type': 'application/json', 'X-Shopify-Storefront-Access-Token': token },
         body: JSON.stringify({ query: PING_GQL }),
       })
       const text = await resp.text()
