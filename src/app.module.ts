@@ -16,10 +16,18 @@ import { ShopifyModule } from './shopify/shopify.module'
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
     MongooseModule.forRoot(process.env.MONGODB_URI ?? 'mongodb://localhost:27017/aura-shop'),
-    ServeStaticModule.forRoot({
-      rootPath: join(process.cwd(), 'public'),
-      serveStaticOptions: { index: false },
-    }),
+    ServeStaticModule.forRoot(
+      {
+        rootPath: join(process.cwd(), 'public', 'widget'),
+        serveRoot: '/widget',
+        serveStaticOptions: { index: false },
+      },
+      {
+        rootPath: join(process.cwd(), 'public', 'uploads'),
+        serveRoot: '/uploads',
+        serveStaticOptions: { index: false },
+      },
+    ),
     AuthModule,
     UsersModule,
     ProductsModule,
