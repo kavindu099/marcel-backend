@@ -15,7 +15,8 @@ interface Intent {
   size?: string
   isFollowUp?: boolean
   forMen?: boolean
-  searchTerms?: string  // exact product name/model the user mentioned — searched directly in Shopify
+  searchTerms?: string         // exact product the user named — searched directly
+  searchAlternatives?: string[] // product types that could solve a described problem/need
 }
 
 type ImageMediaType = 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp'
@@ -119,7 +120,20 @@ export class ChatService {
       })
     }
 
-    // When the user named a specific product or category, do a single targeted search.
+    // Problem/need-based query: search each alternative in parallel and merge.
+    if (intent.searchAlternatives?.length) {
+      const searches = intent.searchAlternatives.map(term =>
+        this.shopifyProductsService.search(shopDomain, shop.accessToken, {
+          ...intent,
+          searchTerms: term,
+          searchAlternatives: undefined,
+        })
+      )
+      const results = await Promise.all(searches)
+      return this.dedupe(results.flat()).slice(0, 12)
+    }
+
+    // Specific product or category search.
     if (intent.category || intent.searchTerms) {
       return this.shopifyProductsService.search(shopDomain, shop.accessToken, intent)
     }
@@ -140,6 +154,12 @@ export class ChatService {
 
     if (isSelfMale) {
       docs = await this.productsService.search({ ...intent, category: "Unisex Tops" })
+    } else if (intent.searchAlternatives?.length) {
+      const searches = intent.searchAlternatives.map(term =>
+        this.productsService.search({ ...intent, searchTerms: term, searchAlternatives: undefined })
+      )
+      const results = await Promise.all(searches)
+      docs = this.dedupeLocal(results.flat())
     } else if (intent.category) {
       docs = await this.productsService.search(intent)
     } else {
@@ -232,12 +252,13 @@ export class ChatService {
 
     const res = await this.claude.messages.create({
       model: 'claude-haiku-4-5-20251001',
-      max_tokens: 300,
+      max_tokens: 400,
       system: `You are a shopping intent extraction engine for an online store that may sell any type of product.
 The customer may write in any language. Understand their message regardless of language.
 
 Extract shopping intent and return ONLY valid JSON with these optional fields:
-- searchTerms: string (the product the customer is asking about — use their exact words, e.g. "lifting mask", "compression shorts", "24K Gold V-Line Lifting Mask", "collagen patches")
+- searchTerms: string (when the customer names or asks for a SPECIFIC product — use their exact words)
+- searchAlternatives: string[] (when the customer describes a PROBLEM, GOAL, or OCCASION without naming a product — generate 3-5 product types that could help them, ordered by relevance)
 - colour: string (e.g. "red", "black", "blue")
 - occasion: string (e.g. "wedding", "gym", "work", "casual")
 - budget: number (max price in USD)
@@ -245,14 +266,20 @@ Extract shopping intent and return ONLY valid JSON with these optional fields:
 - isFollowUp: true (if the message refers to a previously discussed product without naming a new one)
 - forMen: true (ONLY when a man is explicitly shopping FOR HIMSELF — not as a gift for someone else)
 
-CRITICAL: Set searchTerms for ANY product request — clothing, beauty, skincare, food, electronics, or anything else. Never leave searchTerms empty when the customer asks about a product.
+CRITICAL RULES:
+- Use searchTerms when customer names a specific product: "lifting mask", "compression shorts", "collagen cream"
+- Use searchAlternatives when customer describes a need/problem/goal/occasion without naming a product
+- Never set BOTH searchTerms and searchAlternatives — pick one
+- Never leave both empty when there is product intent
 
 Examples:
 - "do you have lifting mask" → { "searchTerms": "lifting mask" }
-- "do you have ACTIVE Ax COMPRESSION SHORTS" → { "searchTerms": "ACTIVE Ax COMPRESSION SHORTS" }
 - "show me red dresses under $50" → { "searchTerms": "red dress", "colour": "red", "budget": 50 }
-- "anti-wrinkle patches" → { "searchTerms": "anti-wrinkle patches" }
-- "something for the gym" → { "searchTerms": "gym", "occasion": "gym" }
+- "my skin is dry and I need hydration" → { "searchAlternatives": ["moisturizer", "hydrating serum", "toner", "hyaluronic acid", "face cream"] }
+- "I have a job interview tomorrow" → { "searchAlternatives": ["blazer", "formal shirt", "formal dress", "dress pants", "suit"] }
+- "I want to look good at a party" → { "searchAlternatives": ["party dress", "cocktail dress", "heels", "earrings", "perfume"] }
+- "something for my workout" → { "searchAlternatives": ["gym wear", "sports bra", "leggings", "protein", "water bottle"], "occasion": "gym" }
+- "I have wrinkles and want to look younger" → { "searchAlternatives": ["retinol", "anti-aging serum", "collagen cream", "lifting mask", "eye cream"] }
 - "hi" / "thanks" → {}
 
 Return {} ONLY when there is clearly no product-related intent (pure greetings, thank-you, off-topic chat).`,
@@ -324,23 +351,27 @@ Analyse the photo and recommend relevant products from [CATALOGUE MATCHES]:
 Detect the customer's language and always reply in that same language. Never switch mid-conversation.
 Adapt your knowledge and terminology to this store's products automatically — wine store: use wine expertise; clothing: fashion expertise; beauty: skincare knowledge; and so on.
 
-[CATALOGUE MATCHES] in each message shows which products from this store matched the customer's request.
+[CATALOGUE MATCHES] in each message shows products from this store that may match the customer's request or solve their stated problem.
 
 ═══ RESPONSE RULES ═══
 1. NO emojis. Ever.
 2. Be warm and conversational — 2–4 sentences for simple replies. Brief bullet points are fine for listing multiple products.
-3. Recommend ONLY products listed in [CATALOGUE MATCHES]. Name each by its exact name and briefly explain why it suits the customer.
-4. Out-of-stock products (marked [OUT OF STOCK]):
+3. Recommend ONLY products listed in [CATALOGUE MATCHES]. Name each by its exact name.
+4. When the customer described a PROBLEM or NEED (not a specific product):
+   — Act as a knowledgeable consultant. Explain HOW each product addresses their specific problem.
+   — Example: if they said "my skin is dry", say "The [Product] contains hyaluronic acid which deeply hydrates..."
+   — Connect the product's features directly to the customer's stated concern.
+5. Out-of-stock products (marked [OUT OF STOCK]):
    — Acknowledge: "The [Product] is currently out of stock at $X."
    — Suggest the closest in-stock alternative from [CATALOGUE MATCHES].
    — If no alternative exists, invite them to check back or browse at /products.
-5. If [CATALOGUE MATCHES] says "None":
-   — Be honest: this store doesn't appear to carry that item right now.
+6. If [CATALOGUE MATCHES] says "None":
+   — Be honest: this store doesn't appear to carry something that fits right now.
    — Do NOT invent reasons like "out of stock" or "not available."
    — Invite them to browse the full collection at /products.
-6. Never speculate about products, stock, or pricing beyond [CATALOGUE MATCHES].
-7. After each recommendation, ask one natural follow-up question (size, colour, occasion, budget, preference) to refine the search.
-8. If the customer has asked the same thing 2+ times without success, offer to connect them with the store team.`
+7. Never speculate about products, stock, or pricing beyond [CATALOGUE MATCHES].
+8. After each recommendation, ask one natural follow-up question to refine further.
+9. If the customer has asked the same thing 2+ times without success, offer to connect them with the store team.`
 
     const res = await this.claude.messages.create({
       model: 'claude-sonnet-4-6',
