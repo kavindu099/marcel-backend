@@ -108,7 +108,9 @@ export class ShopifyOAuthController {
       const accessToken = await this.oauthService.exchangeCodeForToken(shop, code)
       await this.shopService.upsert(shop, accessToken)
 
-      // Fetch store name + product types in the background — non-critical, so we don't await.
+      // Non-critical background tasks — register widget script tag and fetch store context.
+      this.oauthService.registerScriptTag(shop, accessToken)
+        .catch(err => console.warn('[ShopifyOAuth] Could not register script tag:', err))
       this.shopifyProductsService.fetchStoreInfo(shop, accessToken)
         .then(info => this.shopService.updateContext(shop, info.shopName, info.productTypes))
         .catch(err => console.warn('[ShopifyOAuth] Could not fetch store context:', err))
