@@ -155,9 +155,8 @@ export class ChatService {
     if (isSelfMale) {
       docs = await this.productsService.search({ ...intent, category: "Unisex Tops" })
     } else if (intent.searchAlternatives?.length) {
-      const searches = intent.searchAlternatives.map(term =>
-        this.productsService.search({ ...intent, searchTerms: term, searchAlternatives: undefined })
-      )
+      const base = { category: intent.category, colour: intent.colour, occasion: intent.occasion, budget: intent.budget, size: intent.size }
+      const searches = intent.searchAlternatives.map(() => this.productsService.search(base))
       const results = await Promise.all(searches)
       docs = this.dedupeLocal(results.flat())
     } else if (intent.category) {

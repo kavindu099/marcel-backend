@@ -8,6 +8,7 @@ interface Intent {
   budget?: number
   size?: string
   searchTerms?: string
+  searchAlternatives?: string[]
 }
 
 const KNOWN_COLOURS = new Set([
