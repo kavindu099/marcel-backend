@@ -66,6 +66,7 @@ export class ShopifyOAuthController {
       return res.status(400).send('Invalid shop domain. Must be a *.myshopify.com address.')
     }
     const authUrl = this.oauthService.generateAuthUrl(shop)
+    console.log('[ShopifyOAuth] install redirect URL:', authUrl)
     return res.redirect(authUrl)
   }
 
