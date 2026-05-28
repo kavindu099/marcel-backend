@@ -117,12 +117,12 @@ export class ShopifyProductsService {
       queries.push(dehyphenated)
       if (modifiers.length > 0) queries.push([dehyphenated, ...modifiers].join(' '))
 
-      // 1b. title: prefix for key words
+      // 1b. title: prefix for key words (single word or multi)
       const keyWords = dehyphenated
         .split(/\s+/)
         .filter(w => w.length > 2 && !/^\d+$/.test(w))
         .slice(0, 5)
-      if (keyWords.length >= 2) {
+      if (keyWords.length >= 1) {
         queries.push(keyWords.map(w => `title:${w}`).join(' '))
       }
 
@@ -150,8 +150,7 @@ export class ShopifyProductsService {
 
     if (modifiers.length > 0) queries.push(modifiers.join(' '))
 
-    // Final fallback: all active products
-    queries.push('status:active')
+    // Final fallback: all products (including draft — some stores publish products without setting active status)
     queries.push('')
 
     return queries
