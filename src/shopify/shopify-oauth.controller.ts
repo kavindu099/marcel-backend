@@ -5,6 +5,8 @@ import { ShopifyOAuthService } from './shopify-oauth.service'
 import { ShopService } from './shop.service'
 import { ShopifyProductsService } from './shopify-products.service'
 
+const PING_GQL = `{ shop { name } products(first: 3, query: "status:active") { edges { node { id title } } } }`
+
 @ApiTags('Shopify')
 @Controller('shopify')
 export class ShopifyOAuthController {
@@ -13,6 +15,47 @@ export class ShopifyOAuthController {
     private readonly shopService: ShopService,
     private readonly shopifyProductsService: ShopifyProductsService,
   ) {}
+
+  // Diagnostic endpoint — visit /api/shopify/ping?shop=xxx.myshopify.com in a browser.
+  @Get('ping')
+  @ApiOperation({ summary: 'Test Shopify connection for a shop' })
+  async ping(@Query('shop') shop: string, @Res() res: Response) {
+    if (!shop) return res.status(400).json({ error: 'Missing ?shop= param' })
+
+    const shopDoc = await this.shopService.findByDomain(shop)
+    if (!shopDoc) {
+      return res.json({
+        shop,
+        inMongo: false,
+        error: 'Shop not found in MongoDB — OAuth install not completed or wrong domain.',
+      })
+    }
+
+    const token = shopDoc.accessToken
+    const result: Record<string, unknown> = {
+      shop,
+      inMongo: true,
+      tokenLength: token?.length ?? 0,
+      shopName: shopDoc.shopName,
+      productTypes: shopDoc.productTypes,
+    }
+
+    try {
+      const resp = await fetch(`https://${shop}/admin/api/2025-01/graphql.json`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Shopify-Access-Token': token },
+        body: JSON.stringify({ query: PING_GQL }),
+      })
+      const text = await resp.text()
+      result.httpStatus = resp.status
+      result.rawResponse = text.slice(0, 1000)
+      try { result.parsed = JSON.parse(text) } catch { result.parseError = true }
+    } catch (err) {
+      result.fetchError = String(err)
+    }
+
+    return res.json(result)
+  }
 
   // Step 1: Merchant visits this URL to begin installation.
   // Example: https://your-api.com/api/shopify/install?shop=mystore.myshopify.com
