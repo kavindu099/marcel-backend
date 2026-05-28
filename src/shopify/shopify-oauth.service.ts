@@ -1,11 +1,11 @@
 import { Injectable } from '@nestjs/common'
-import * as crypto from 'crypto'
+import * as crypto from 'node:crypto'
 
 @Injectable()
 export class ShopifyOAuthService {
   private get apiKey() { return process.env.SHOPIFY_API_KEY ?? '' }
   private get apiSecret() { return process.env.SHOPIFY_API_SECRET ?? '' }
-  private get scopes() { return process.env.SHOPIFY_SCOPES ?? 'read_products' }
+  private get scopes() { return process.env.SHOPIFY_SCOPES || 'read_products' }
   private get redirectUri() { return `${process.env.SHOPIFY_APP_URL}/api/shopify/callback` }
 
   generateAuthUrl(shop: string): string {
@@ -44,7 +44,7 @@ export class ShopifyOAuthService {
     if (!hmac || !this.apiSecret) return false
 
     const message = Object.keys(rest)
-      .sort()
+      .sort((a, b) => a.localeCompare(b))
       .map(k => `${k}=${rest[k]}`)
       .join('&')
 
