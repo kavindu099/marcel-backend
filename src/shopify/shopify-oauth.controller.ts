@@ -1,4 +1,4 @@
-import { Controller, Get, Query, Res } from '@nestjs/common'
+import { Controller, Get, Post, Body, Query, Res } from '@nestjs/common'
 import type { Response } from 'express'
 import { ApiTags, ApiOperation } from '@nestjs/swagger'
 import { ShopifyOAuthService } from './shopify-oauth.service'
@@ -15,6 +15,23 @@ export class ShopifyOAuthController {
     private readonly shopService: ShopService,
     private readonly shopifyProductsService: ShopifyProductsService,
   ) {}
+
+  // Manually register a shop with a custom app token — bypasses OAuth for dev/testing.
+  // POST /api/shopify/register  { secret, shop, accessToken }
+  @Post('register')
+  @ApiOperation({ summary: 'Manually register a shop access token' })
+  async register(@Body() body: { secret?: string; shop?: string; accessToken?: string }, @Res() res: Response) {
+    const expectedSecret = process.env.SHOPIFY_REGISTER_SECRET
+    if (!expectedSecret || body.secret !== expectedSecret) {
+      return res.status(401).json({ error: 'Invalid secret' })
+    }
+    if (!body.shop || !body.accessToken) {
+      return res.status(400).json({ error: 'shop and accessToken are required' })
+    }
+    await this.shopService.upsert(body.shop, body.accessToken)
+    console.log(`[ShopifyOAuth] Manually registered shop: ${body.shop}`)
+    return res.json({ ok: true, shop: body.shop })
+  }
 
   // Diagnostic endpoint — visit /api/shopify/ping?shop=xxx.myshopify.com in a browser.
   @Get('ping')
