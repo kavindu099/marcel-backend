@@ -9,6 +9,7 @@ interface Intent {
   size?: string
   searchTerms?: string
   searchAlternatives?: string[]
+  skipFinalFallback?: boolean  // when true, don't fall back to all-products query
 }
 
 const KNOWN_COLOURS = new Set([
@@ -151,8 +152,8 @@ export class ShopifyProductsService {
 
     if (modifiers.length > 0) queries.push(modifiers.join(' '))
 
-    // Final fallback: all products (including draft — some stores publish products without setting active status)
-    queries.push('')
+    // Final fallback: all products — skipped when searching alternatives so irrelevant products don't bleed in
+    if (!intent.skipFinalFallback) queries.push('')
 
     return queries
   }

@@ -15,8 +15,9 @@ interface Intent {
   size?: string
   isFollowUp?: boolean
   forMen?: boolean
-  searchTerms?: string         // exact product the user named — searched directly
+  searchTerms?: string          // exact product the user named — searched directly
   searchAlternatives?: string[] // product types that could solve a described problem/need
+  skipFinalFallback?: boolean
 }
 
 type ImageMediaType = 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp'
@@ -127,6 +128,7 @@ export class ChatService {
           ...intent,
           searchTerms: term,
           searchAlternatives: undefined,
+          skipFinalFallback: true,
         })
       )
       const results = await Promise.all(searches)
