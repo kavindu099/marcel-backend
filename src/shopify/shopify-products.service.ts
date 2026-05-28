@@ -28,7 +28,7 @@ const ADMIN_PRODUCTS_GQL = `
           handle
           productType
           tags
-          availableForSale
+          status
           priceRange {
             minVariantPrice { amount currencyCode }
           }
@@ -239,7 +239,7 @@ export class ShopifyProductsService {
       ? variantGid.split('/').pop()
       : variantGid
 
-    const inStock = (node.availableForSale as boolean | null) ?? (firstAvailable !== null)
+    const inStock = (node.status as string | null) === 'ACTIVE' && firstAvailable !== null
 
     return {
       _id: (node.id as string | null) ?? '',
