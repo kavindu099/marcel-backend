@@ -18,7 +18,6 @@ import { ShopifyModule } from './shopify/shopify.module'
     MongooseModule.forRoot(process.env.MONGODB_URI ?? 'mongodb://localhost:27017/aura-shop'),
     ServeStaticModule.forRoot({
       rootPath: join(process.cwd(), 'public'),
-      serveRoot: '/public',
       serveStaticOptions: { index: false },
     }),
     AuthModule,
