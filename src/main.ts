@@ -11,8 +11,14 @@ async function bootstrap() {
   app.enableCors({
     origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
       const allowed = process.env.FRONTEND_URL ?? 'http://localhost:3000'
-      // Allow any localhost port in development
-      if (!origin || origin === allowed || /^http:\/\/localhost:\d+$/.test(origin)) {
+      if (
+        !origin ||
+        origin === allowed ||
+        /^http:\/\/localhost:\d+$/.test(origin) ||
+        /^https?:\/\/[a-zA-Z0-9-]+\.myshopify\.com$/.test(origin) ||
+        /^https?:\/\/[a-zA-Z0-9-]+\.shopifypreview\.com$/.test(origin) ||
+        /^https?:\/\/[a-zA-Z0-9-]+\.myshopify\.com\.test$/.test(origin)
+      ) {
         callback(null, true)
       } else {
         callback(new Error('Not allowed by CORS'))

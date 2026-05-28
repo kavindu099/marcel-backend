@@ -1,0 +1,28 @@
+# compiled output
+dist/
+build/
+
+# dependencies
+node_modules/
+
+# env files — never commit real secrets
+.env
+.env.local
+.env.*.local
+
+# logs
+logs/
+*.log
+npm-debug.log*
+
+# uploads (user-uploaded images)
+public/uploads/
+
+# IDE
+.idea/
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?

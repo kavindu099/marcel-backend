@@ -13,6 +13,8 @@ class ChatRequestDto {
   @IsOptional() @IsArray() history?: ChatMessageDto[]
   @IsOptional() @IsString() image?: string
   @IsOptional() @IsString() mediaType?: string
+  // When provided, the backend fetches products from this Shopify store instead of local MongoDB.
+  @IsOptional() @IsString() shopDomain?: string
 }
 
 @ApiTags('Chat')
@@ -25,7 +27,7 @@ export class ChatController {
   @ApiBody({ type: ChatRequestDto })
   async chat(@Body() body: ChatRequestDto) {
     try {
-      return await this.chatService.chat(body.message, body.history ?? [], body.image, body.mediaType)
+      return await this.chatService.chat(body.message, body.history ?? [], body.image, body.mediaType, body.shopDomain)
     } catch (err) {
       console.error('[ChatController] Error:', err)
       throw err
