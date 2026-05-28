@@ -6,6 +6,14 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger'
 async function bootstrap() {
   const app = await NestFactory.create(AppModule)
 
+  // Shopify redirects to the app URL after install — send the merchant to their admin apps page.
+  const express = app.getHttpAdapter().getInstance() as { get: (path: string, handler: (req: Record<string, unknown>, res: { redirect: (url: string) => void; json: (data: unknown) => void }) => void) => void }
+  express.get('/', (req, res) => {
+    const shop = (req.query as Record<string, string>).shop
+    if (shop) return res.redirect(`https://${shop}/admin/apps`)
+    res.json({ ok: true, service: 'Marcel AI Shopping Assistant' })
+  })
+
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }))
 
   app.enableCors({
