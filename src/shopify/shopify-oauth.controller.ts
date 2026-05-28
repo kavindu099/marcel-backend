@@ -58,9 +58,9 @@ export class ShopifyOAuthController {
     }
 
     try {
-      const resp = await fetch(`https://${shop}/api/2025-01/graphql.json`, {
+      const resp = await fetch(`https://${shop}/admin/api/2025-01/graphql.json`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Shopify-Storefront-Access-Token': token },
+        headers: { 'Content-Type': 'application/json', 'X-Shopify-Access-Token': token },
         body: JSON.stringify({ query: PING_GQL }),
       })
       const text = await resp.text()

@@ -16,9 +16,9 @@ const KNOWN_COLOURS = new Set([
   'coral','teal','lilac','maroon','olive','khaki','rose','mint','lavender',
 ])
 
-// Storefront API — public endpoint, no admin token needed.
-// Uses X-Shopify-Storefront-Access-Token header.
-const STOREFRONT_PRODUCTS_GQL = `
+// Admin API — requires OAuth access token with read_products scope.
+// Uses X-Shopify-Access-Token header.
+const ADMIN_PRODUCTS_GQL = `
   query SearchProducts($query: String!, $first: Int!) {
     products(first: $first, query: $query) {
       edges {
@@ -37,8 +37,8 @@ const STOREFRONT_PRODUCTS_GQL = `
               node {
                 id
                 availableForSale
-                price { amount }
-                compareAtPrice { amount }
+                price
+                compareAtPrice
                 selectedOptions { name value }
               }
             }
@@ -54,20 +54,20 @@ const STOREFRONT_PRODUCTS_GQL = `
   }
 `
 
-const STOREFRONT_SHOP_GQL = `{ shop { name } }`
+const ADMIN_SHOP_GQL = `{ shop { name } }`
 
 @Injectable()
 export class ShopifyProductsService {
 
-  async fetchStoreInfo(shopDomain: string, storefrontToken: string): Promise<{ shopName: string; productTypes: string[] }> {
+  async fetchStoreInfo(shopDomain: string, adminToken: string): Promise<{ shopName: string; productTypes: string[] }> {
     try {
-      const resp = await fetch(`https://${shopDomain}/api/2025-01/graphql.json`, {
+      const resp = await fetch(`https://${shopDomain}/admin/api/2025-01/graphql.json`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'X-Shopify-Storefront-Access-Token': storefrontToken,
+          'X-Shopify-Access-Token': adminToken,
         },
-        body: JSON.stringify({ query: STOREFRONT_SHOP_GQL }),
+        body: JSON.stringify({ query: ADMIN_SHOP_GQL }),
       })
       if (!resp.ok) return { shopName: shopDomain, productTypes: [] }
       const json = await resp.json() as { data?: { shop?: { name?: string } } }
@@ -78,12 +78,12 @@ export class ShopifyProductsService {
     }
   }
 
-  async search(shopDomain: string, storefrontToken: string, intent: Intent): Promise<ChatProduct[]> {
+  async search(shopDomain: string, adminToken: string, intent: Intent): Promise<ChatProduct[]> {
     const queriesToTry = this.buildQueryFallbacks(intent)
     let products: ChatProduct[] = []
 
     for (const q of queriesToTry) {
-      products = await this.runQuery(shopDomain, storefrontToken, q)
+      products = await this.runQuery(shopDomain, adminToken, q)
       if (products.length > 0) break
       console.log(`[ShopifyProducts] Query returned 0: "${q}" — trying next fallback`)
     }
@@ -150,25 +150,25 @@ export class ShopifyProductsService {
 
     if (modifiers.length > 0) queries.push(modifiers.join(' '))
 
-    // Final fallback: all available products
-    queries.push('available_for_sale:true')
+    // Final fallback: all active products
+    queries.push('status:active')
     queries.push('')
 
     return queries
   }
 
-  private async runQuery(shopDomain: string, storefrontToken: string, query: string): Promise<ChatProduct[]> {
-    console.log(`[ShopifyProducts] runQuery shop=${shopDomain} tokenLen=${storefrontToken?.length ?? 0} query="${query}"`)
+  private async runQuery(shopDomain: string, adminToken: string, query: string): Promise<ChatProduct[]> {
+    console.log(`[ShopifyProducts] runQuery shop=${shopDomain} tokenLen=${adminToken?.length ?? 0} query="${query}"`)
 
     let resp: Response
     try {
-      resp = await fetch(`https://${shopDomain}/api/2025-01/graphql.json`, {
+      resp = await fetch(`https://${shopDomain}/admin/api/2025-01/graphql.json`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'X-Shopify-Storefront-Access-Token': storefrontToken,
+          'X-Shopify-Access-Token': adminToken,
         },
-        body: JSON.stringify({ query: STOREFRONT_PRODUCTS_GQL, variables: { query, first: 50 } }),
+        body: JSON.stringify({ query: ADMIN_PRODUCTS_GQL, variables: { query, first: 50 } }),
       })
     } catch (err) {
       console.error('[ShopifyProducts] Fetch error:', err)
@@ -223,14 +223,14 @@ export class ShopifyProductsService {
       KNOWN_COLOURS.has(t.toLowerCase())
     )
 
-    // Storefront API: price is { amount: string } object
+    // Admin API: price and compareAtPrice are plain decimal strings on variants
     const firstAvailable = variants.find(v => v.availableForSale) ?? null
     const firstVariant = firstAvailable ?? variants[0] ?? {}
 
     const priceRange = node.priceRange as { minVariantPrice?: { amount?: string } } | null
-    const variantPrice = (firstVariant.price as { amount?: string } | null)?.amount
+    const variantPrice = firstVariant.price as string | null
     const price = Number.parseFloat(variantPrice ?? priceRange?.minVariantPrice?.amount ?? '0')
-    const compareAtAmount = (firstVariant.compareAtPrice as { amount?: string } | null)?.amount
+    const compareAtAmount = firstVariant.compareAtPrice as string | null
     const compareAt = Number.parseFloat(compareAtAmount ?? '0')
     const hasSale = compareAt > 0 && compareAt > price
 
